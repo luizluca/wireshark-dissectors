@@ -39,7 +39,7 @@ local DSA_DIRECTION = {
 
 local pf_zero_id          = ProtoField.new    ("Reserved", "marvell_dsa_ethertype.zero", ftypes.NONE)
 local pf_cmd_id           = ProtoField.uint32 ("marvell_dsa_ethertype.cmd", "DSA Command", base.HEX, DSA_CMD, 0xc0000000)
-local pf_tagged_id        = ProtoField.uint32 ("marvell_dsa_ethertype.tagged", "Tagged", base.DEC, null, 0x20000000)
+local pf_tagged_id        = ProtoField.bool   ("marvell_dsa_ethertype.tagged", "Tagged", 32, null, 0x20000000)
 
 local pf_source_device_id = ProtoField.uint32 ("marvell_dsa_ethertype.src_device","Source Device", base.DEC, null, 0x1f000000)
 local pf_source_port_id   = ProtoField.uint32 ("marvell_dsa_ethertype.src_port","Source Port", base.DEC, null, 0x00f80000)
@@ -49,7 +49,7 @@ local pf_dest_port_id     = ProtoField.uint32 ("marvell_dsa_ethertype.dst_port",
 
 local pf_direction_id     = ProtoField.uint32 ("marvell_dsa_ethertype.direction","Direction", base.DEC, DSA_DIRECTION, 0x00040000)
 local pf_code_id          = ProtoField.uint32 ("marvell_dsa_ethertype.code", "CPU Code", base.HEX, DSA_CODE, 0x03100000)
-local pf_cfi_id           = ProtoField.uint32 ("marvell_dsa_ethertype.cfi", "Canonical Format Indicator (CFI) Code", base.DEC, null, 0x00010000)
+local pf_cfi_id           = ProtoField.bool   ("marvell_dsa_ethertype.cfi", "Canonical Format Indicator (CFI) Code", 32, null, 0x00010000)
 local pf_vlan_pri_id      = ProtoField.uint32 ("marvell_dsa_ethertype.vlan_priority","VLAN Prioriry", base.DEC, null, 0x0000e000)
 local pf_vlan_id_id       = ProtoField.uint32 ("marvell_dsa_ethertype.vlan_id","VLAN ID", base.DEC, null, 0x00000fff)
 local pf_ethertype_id     = ProtoField.uint16 ("marvell_dsa_ethertype.ether_type", "Ethernet Type", base.HEX)
