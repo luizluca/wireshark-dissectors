@@ -40,24 +40,34 @@ local DSA_DIRECTION = {
 
 local pf_proto_id         = ProtoField.uint8  ("dsa_ethertype_rtk.protocol", "Tag Version", base.HEX)
 local pf_reason_id        = ProtoField.uint8  ("dsa_ethertype_rtk.reason", "Reason", base.HEX, DSA_REASON)
-local pf_fid_en_id        = ProtoField.uint16 ("dsa_ethertype_rtk.fid_enabled", "FID Enabled", base.HEX, null, 0x8000)
-local pf_reserved         = ProtoField.uint16 ("dsa_ethertype_rtk.reserved", "Reserved", base.HEX, null, 0x4000)
-local pf_fid_id           = ProtoField.uint16 ("dsa_ethertype_rtk.fid", "FID", base.HEX, null, 0x3000)
-local pf_pri_en_id        = ProtoField.uint16 ("dsa_ethertype_rtk.priority_enabled", "Priority Enabled", base.HEX, null, 0x0800)
-local pf_pri_id           = ProtoField.uint16 ("dsa_ethertype_rtk.priority", "Priority", base.HEX, null, 0x0700)
-local pf_keep_id          = ProtoField.uint16 ("dsa_ethertype_rtk.keep_vlan", "Keep VLAN Tag", base.HEX, null, 0x0080)
-local pf_reserved2        = ProtoField.uint16 ("dsa_ethertype_rtk.reserved2", "Reserved", base.HEX, null, 0x0040)
-local pf_learn_dis        = ProtoField.uint16 ("dsa_ethertype_rtk.learn_mac", "Learn Source MAC", base.HEX, null, 0x0020)
-local pf_reserved3        = ProtoField.uint16 ("dsa_ethertype_rtk.reserved3", "Reserved", base.HEX, null, 0x001F)
-local pf_allowance        = ProtoField.uint16 ("dsa_ethertype_rtk.allowance", "Allowance", base.HEX, null, 0x8000)
+local pf_fid_en_id        = ProtoField.bool   ("dsa_ethertype_rtk.fid_enabled", "FID Enabled", 32, null, 0x80000000)
+local pf_fid_id           = ProtoField.uint32 ("dsa_ethertype_rtk.fid", "FID", base.HEX, null, 0x70000000)
+local pf_pri_en_id        = ProtoField.bool   ("dsa_ethertype_rtk.priority_enabled", "Priority Enabled", 32, null, 0x08000000)
+local pf_pri_id           = ProtoField.uint32 ("dsa_ethertype_rtk.priority", "Priority", base.HEX, null, 0x07000000)
+local pf_keep_id          = ProtoField.bool   ("dsa_ethertype_rtk.keep_vlan", "Keep VLAN Tag", 32, null, 0x00800000)
+local pf_vlan_en_id       = ProtoField.bool   ("dsa_ethertype_rtk.vlan_enable", "Enable VLAN", 32, null, 0x00400000)
+local pf_learn_dis        = ProtoField.bool   ("dsa_ethertype_rtk.dont_learn_mac", "Disable Source MAC Learn", 32, null, 0x00200000)
+local pf_vidx             = ProtoField.uint32 ("dsa_ethertype_rtk.vidx", "VLAN index", base.DEC, null, 0x001F0000)
+local pf_allowance        = ProtoField.bool   ("dsa_ethertype_rtk.allowance", "Allowance", 32, null, 0x00008000)
 -- this is a single byte value (up to 15)
-local pf_txport           = ProtoField.uint16 ("dsa_ethertype_rtk.tx_port", "transmitter Port", base.HEX, null, 0x000f)
+local pf_txport           = ProtoField.uint32 ("dsa_ethertype_rtk.tx_port", "transmitter Port", base.DEC, null, 0x0000000f)
 -- this is a bitmap, up to 11
-local pf_rxport_mask      = ProtoField.uint16 ("dsa_ethertype_rtk.rx_port_mask", "Receiver Port Mask", base.HEX, null, 0x07ff)
+local pf_rxport_mask      = ProtoField.uint32 ("dsa_ethertype_rtk.rx_port_mask", "Receiver Port Mask", base.HEX, null, 0x000007fff)
 local pf_ethertype_id     = ProtoField.uint16 ("dsa_ethertype_rtk.ether_type", "Ethernet Type", base.HEX)
 
-edsa.fields = { pf_proto_id, pf_reason_id, pf_fid_en_id, pf_reserved, pf_fid_id, pf_pri_en_id, pf_pri_id, pf_keep_id, pf_reserved2, pf_learn_dis, pf_reserved3, pf_allowance, pf_txport, pf_rxport_mask, pf_ethertype_id }
+edsa.fields = { pf_proto_id, pf_reason_id, pf_fid_en_id, pf_fid_id, pf_pri_en_id, pf_pri_id, pf_keep_id, pf_vlan_en_id, pf_learn_dis, pf_vidx, pf_allowance, pf_txport, pf_rxport_mask, pf_ethertype_id }
 dsEtherType = DissectorTable.get("ethertype")
+
+function bitmask2num(bitmask, numbits)
+    local ret=""
+    for num=0,numbits-1 do
+        if (bitmask % 2 == 1) then
+            ret=ret..","..num
+        end
+        bitmask=bitmask/2
+    end
+    return ret:sub(2)
+end
 
 function dissector9(tvbuf,pktinfo,root)
     local tree = root:add(edsa, tvbuf:range(0,DSA_HLEN_9 + ETHER_TYPE_LEN), "Realtek Ethertype DSA tagging")
@@ -94,74 +104,48 @@ function dissectorA(tvbuf,pktinfo,root)
 end
 
 function dissector04(tvbuf,pktinfo,root)
-    --  -------------------------------------------
-    --  | MAC DA | MAC SA | 8 byte tag | Type | ...
-    --  -------------------------------------------
-    --     _______________/            \______________________________________
-    --    /                                                                   \
-    --  0                                  7|8                                 15
-    --  |-----------------------------------+-----------------------------------|---
-    --  |                               (16-bit)                                | ^
-    --  |                       Realtek EtherType [0x8899]                      | |
-    --  |-----------------------------------+-----------------------------------| 8
-    --  |              (8-bit)              |              (8-bit)              |
-    --  |          Protocol [0x04]          |              REASON               | b
-    --  |-----------------------------------+-----------------------------------| y
-    --  |   (1)  | (1) | (2) |   (1)  | (3) | (1)  | (1) |    (1)    |   (5)    | t
-    --  | FID_EN |  X  | FID | PRI_EN | PRI | KEEP |  X  | LEARN_DIS |    X     | e
-    --  |-----------------------------------+-----------------------------------| s
-    --  |   (1)  |                       (15-bit)                               | |
-    --  |  ALLOW |                        TX/RX                                 | v
-    --  |-----------------------------------+-----------------------------------|---
-    --
-    -- With the following field descriptions:
-    --
-    --    field      | description
-    --   ------------+-------------
-    --    Realtek    | 0x8899: indicates that this is a proprietary Realtek tag;
-    --     EtherType |         note that Realtek uses the same EtherType for
-    --               |         other incompatible tag formats (e.g. tag_rtl4_a.c)
-    --    Protocol   | 0x04: indicates that this tag conforms to this format
-    --    X          | reserved
-    --   ------------+-------------
-    --    REASON     | reason for forwarding packet to CPU
-    --               | 0: packet was forwarded or flooded to CPU
-    --               | 80: packet was trapped to CPU
-    --    FID_EN     | 1: packet has an FID
-    --               | 0: no FID
-    --    FID        | FID of packet (if FID_EN=1)
-    --    PRI_EN     | 1: force priority of packet
-    --               | 0: don't force priority
-    --    PRI        | priority of packet (if PRI_EN=1)
-    --    KEEP       | preserve packet VLAN tag format
-    --    LEARN_DIS  | don't learn the source MAC address of the packet
-    --    ALLOW      | 1: treat TX/RX field as an allowance port mask, meaning the
-    --               |    packet may only be forwarded to ports specified in the
-    --               |    mask
-    --               | 0: no allowance port mask, TX/RX field is the forwarding
-    --               |    port mask
-    --    TX/RX      | TX (switch->CPU): port number the packet was received on
-    --               | RX (CPU->switch): forwarding port mask (if ALLOW=0)
+--      7   6   5   4   3   2   1   0
+--   .   .   .   .   .   .   .   .   .
+--   +---+---+---+---+---+---+---+---+
+--   |   Ether Destination Address   |
+--   +---+---+---+---+---+---+---+---+
+--   |     Ether Source Address      |
+--   +---+---+---+---+---+---+---+---+  --
+--   |   Realktek Ether Type [15:8]  |  |
+--   +---+---+---+---+---+---+---+---+  |
+--   |   Realktek Ether Type [7:0]   |  |
+--   +---+---+---+---+---+---+---+---+  |
+--   |            Protocol           |  |
+--   +---+---+---+---+---+---+---+---+  |
+--   |             Reason            |  |
+--   +---+---+---+---+---+---+---+---+  | EDSA tag
+--   | b1|EncFID[2:0]| b2| PRI [2:0] |  |
+--   +---+---+---+---+---+---+---+---+  |
+--   | b3| b4| b5|    VIDX [4:0]     |  |
+--   +---+---+---+---+---+---+---+---+  |
+--   | b6|         TX/RX[14:8]       |  |
+--   +---+---+---+---+---+---+---+---+  |
+--   |           TX/RX[7:0]          |  |
+--   +---+---+---+---+---+---+---+---+  --
+--   |           Ether Type          |
+--   +---+---+---+---+---+---+---+---+
+--   .   .   .   .   .   .   .   .   .
     local tree = root:add(edsa, tvbuf:range(0,DSA_HLEN_4 + ETHER_TYPE_LEN), "Realtek Ethertype DSA tagging")
     tree:add(pf_proto_id, tvbuf:range(0,1))
     tree:add(pf_reason_id, tvbuf:range(1,1))
-    local tvbr = tvbuf:range(2,2)
+    local tvbr = tvbuf:range(2,4)
     tree:add(pf_fid_en_id,tvbr)
-    tree:add(pf_reserved,tvbr)
     tree:add(pf_fid_id,tvbr)
     tree:add(pf_pri_en_id,tvbr)
     tree:add(pf_pri_id,tvbr)
     tree:add(pf_keep_id,tvbr)
-    tree:add(pf_reserved2,tvbr)
+    tree:add(pf_vlan_en_id,tvbr)
     tree:add(pf_learn_dis,tvbr)
-    tree:add(pf_reserved3,tvbr)
-
-    local tvbr = tvbuf:range(4,2)
+    tree:add(pf_vidx,tvbr)
     tree:add(pf_allowance,tvbr)
     -- How to select one of them?!
     tree:add(pf_txport,tvbr)
-    tree:add(pf_rxport_mask,tvbr)
-
+    tree:add(pf_rxport_mask,tvbr:bitfield(17,15),null,"ports: "..bitmask2num(tvbr:bitfield(17,15),15))
     local etherTypebr = tvbuf:range(6,2)
     tree:add(pf_ethertype_id, etherTypebr)
     dsOneEtherType = dsEtherType:get_dissector(etherTypebr:uint())
