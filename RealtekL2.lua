@@ -1,7 +1,9 @@
-edsa = Proto("RealtekL2",  "Realtek Layer 2 Protocols")
+-- vim: noai:ts=4:sw=4:expandtab
+edsa = Proto("RealtekL2",  "Realtek Layer 2 Protocols 2")
 
-local DSA_HLEN_4 = 6
-local DSA_HLEN_A = 2
+local DSA_HLEN_04_8 = 8
+local DSA_HLEN_04_4 = 4
+local DSA_HLEN_A = 4
 local ETHER_TYPE_LEN = 2
 
 local DSA_PROTO_04 = 0x04
@@ -11,8 +13,8 @@ local DSA_PROTO_A = 0xa
 local DSA_REASON_FORWARD  = 0x00
 local DSA_REASON_TRAPPED = 0x80
 local DSA_REASON = {
-        [DSA_REASON_FORWARD] = "Forward",
-        [DSA_REASON_TRAPPED] = "Trapped",
+    [DSA_REASON_FORWARD] = "Forward",
+    [DSA_REASON_TRAPPED] = "Trapped",
 }
 
 local DSA_CODE_MGMT_TRAP     = 0
@@ -24,14 +26,14 @@ local DSA_CODE_POLICY_MIRROR = 5
 local DSA_CODE_RESERVED_6    = 6
 local DSA_CODE_RESERVED_7    = 7
 local DSA_CODE = {
-        [DSA_CODE_MGMT_TRAP]     = "MGMT_TRAP",
-        [DSA_CODE_FRAME2REG]     = "FRAME2REG",
-        [DSA_CODE_IGMP_MLD_TRAP] = "IGMP_MLD_TRAP",
-        [DSA_CODE_POLICY_TRAP]   = "POLICY_TRAP",
-        [DSA_CODE_ARP_MIRROR]    = "ARP_MIRROR",
-        [DSA_CODE_POLICY_MIRROR] = "POLICY_MIRROR",
-        [DSA_CODE_RESERVED_6]    = "RESERVED_6",
-        [DSA_CODE_RESERVED_7]    = "RESERVED_7",
+    [DSA_CODE_MGMT_TRAP]     = "MGMT_TRAP",
+    [DSA_CODE_FRAME2REG]     = "FRAME2REG",
+    [DSA_CODE_IGMP_MLD_TRAP] = "IGMP_MLD_TRAP",
+    [DSA_CODE_POLICY_TRAP]   = "POLICY_TRAP",
+    [DSA_CODE_ARP_MIRROR]    = "ARP_MIRROR",
+    [DSA_CODE_POLICY_MIRROR] = "POLICY_MIRROR",
+    [DSA_CODE_RESERVED_6]    = "RESERVED_6",
+    [DSA_CODE_RESERVED_7]    = "RESERVED_7",
 }
 local DSA_DIRECTION = {
         [0] = "From egress source port",
@@ -50,7 +52,7 @@ local pf_learn_dis        = ProtoField.bool   ("dsa_ethertype_rtk.dont_learn_mac
 local pf_vidx             = ProtoField.uint32 ("dsa_ethertype_rtk.vidx", "VLAN index", base.DEC, null, 0x001F0000)
 local pf_allowance        = ProtoField.bool   ("dsa_ethertype_rtk.allowance", "Allowance", 32, null, 0x00008000)
 -- this is a single byte value (up to 15)
-local pf_txport           = ProtoField.uint32 ("dsa_ethertype_rtk.tx_port", "transmitter Port", base.DEC, null, 0x0000000f)
+local pf_txport           = ProtoField.uint32 ("dsa_ethertype_rtk.tx_port", "Transmitter Port", base.DEC, null, 0x0000000f)
 -- this is a bitmap, up to 11
 local pf_rxport_mask      = ProtoField.uint32 ("dsa_ethertype_rtk.rx_port_mask", "Receiver Port Mask", base.HEX, null, 0x000007fff)
 local pf_ethertype_id     = ProtoField.uint16 ("dsa_ethertype_rtk.ether_type", "Ethernet Type", base.HEX)
@@ -97,9 +99,9 @@ function dissectorA(tvbuf,pktinfo,root)
     -- -------------------------------------------------
     -- | MAC DA | MAC SA | 0x8899 | 2 bytes tag | Type |
     -- -------------------------------------------------
-    local tree = root:add(edsa, tvbuf:range(0,DSA_HLEN_A + ETHER_TYPE_LEN), "Realtek Ethertype DSA tagging")
+    local tree = root:add(edsa, tvbuf:range(0,DSA_HLEN_A), "Realtek Ethertype DSA tagging")
     tree:add("Not implemented yet")
-    local consumed_len = DSA_HLEN_A + ETHER_TYPE_LEN
+    local consumed_len = DSA_HLEN_A
     return dsOneEtherType:call(tvbuf:bytes(8,tvbuf:len()-consumed_len):tvb("test"), pktinfo, root) + consumed_len
 end
 
@@ -130,27 +132,47 @@ function dissector04(tvbuf,pktinfo,root)
 --   |           Ether Type          |
 --   +---+---+---+---+---+---+---+---+
 --   .   .   .   .   .   .   .   .   .
-    local tree = root:add(edsa, tvbuf:range(0,DSA_HLEN_4 + ETHER_TYPE_LEN), "Realtek Ethertype DSA tagging")
+--
+    local dsa_len = DSA_HLEN_04_8
+    local tree
+    local etherTypebr
+
+    tree = root:add(edsa, tvbuf:range(0,dsa_len), "Realtek Ethertype DSA tagging")
     tree:add(pf_proto_id, tvbuf:range(0,1))
-    tree:add(pf_reason_id, tvbuf:range(1,1))
-    local tvbr = tvbuf:range(2,4)
-    tree:add(pf_fid_en_id,tvbr)
-    tree:add(pf_fid_id,tvbr)
-    tree:add(pf_pri_en_id,tvbr)
-    tree:add(pf_pri_id,tvbr)
-    tree:add(pf_keep_id,tvbr)
-    tree:add(pf_vlan_en_id,tvbr)
-    tree:add(pf_learn_dis,tvbr)
-    tree:add(pf_vidx,tvbr)
-    tree:add(pf_allowance,tvbr)
-    -- How to select one of them?!
-    tree:add(pf_txport,tvbr)
-    tree:add(pf_rxport_mask,tvbr:bitfield(17,15),null,"ports: "..bitmask2num(tvbr:bitfield(17,15),15))
-    local etherTypebr = tvbuf:range(6,2)
+
+    if (dsa_len == DSA_HLEN_04_8) then
+        tree:add(pf_reason_id, tvbuf:range(1,1))
+
+        local tvbr = tvbuf:range(2,4)
+        tree:add(pf_fid_en_id,tvbr)
+        tree:add(pf_fid_id,tvbr)
+        tree:add(pf_pri_en_id,tvbr)
+        tree:add(pf_pri_id,tvbr)
+        tree:add(pf_keep_id,tvbr)
+        tree:add(pf_vlan_en_id,tvbr)
+        tree:add(pf_learn_dis,tvbr)
+        tree:add(pf_vidx,tvbr)
+        tree:add(pf_allowance,tvbr)
+        -- How to select one of them?!
+        tree:add(pf_txport,tvbr)
+        tree:add(pf_rxport_mask,tvbr:bitfield(17,15),null,"ports: "..bitmask2num(tvbr:bitfield(17,15),15))
+
+        etherTypebr = tvbuf:range(6,2)
+
+    elseif (dsa_len == DSA_HLEN_04_4) then
+        local tvbr = tvbuf:range(1,1)
+        tree:add(pf_txport, tvbr)
+        --tree:add(pf_rxport_mask,tvbr:bitfield(17,15),null,"ports: "..bitmask2num(tvbr:bitfield(17,15),15))
+        etherTypebr = tvbuf:range(2,2)
+    else
+        tree:add("Unknown tag size!")
+        return 0
+    end
+
     tree:add(pf_ethertype_id, etherTypebr)
     dsOneEtherType = dsEtherType:get_dissector(etherTypebr:uint())
-    local consumed_len = DSA_HLEN_4 + ETHER_TYPE_LEN
-    return dsOneEtherType:call(tvbuf:bytes(8,tvbuf:len()-consumed_len):tvb("test"), pktinfo, root) + consumed_len
+
+    return dsOneEtherType:call(tvbuf:bytes(dsa_len,tvbuf:len()-dsa_len):tvb("Realtek Ethertype DSA tagging"), pktinfo, root) + dsa_len
 end
 
 function edsa.dissector(tvbuf,pktinfo,root)
